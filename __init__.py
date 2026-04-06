@@ -1,6 +1,4 @@
-from .nodes.nodes import *
 from .nodes.image_nodes import *
-
 
 NODE_CONFIG = {
     "BboxesVisualize": {"class": BboxesVisualize, "name": "Bounding Boxes Visualize"},
