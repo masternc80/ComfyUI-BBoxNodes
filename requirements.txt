@@ -1,3 +1,8 @@
 #  Update your requirements.
 #  numpy==1.18.1
 
+
+pillow
+comfy
+torchvision
+torch

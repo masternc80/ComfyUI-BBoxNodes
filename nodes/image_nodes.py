@@ -1,109 +1,212 @@
-from comfy_api.latest import io
 import torch
+from utils import push_bbox, parse_tracking, body_part_names, draw_frame_index
+from torchvision import transforms
+from comfy.utils import ProgressBar
+from comfy_api.latest import io
+from PIL import ImageDraw
 
 
-def push_bbox(x, y, width, height, draw_boxes):
-    bbox = [x, y, width, height]
-    draw_boxes.append(bbox)
+colors = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+    [0.5, 0.5, 0],
+    [0, 0.5, 0.5],
+    [0.5, 0, 0.5],
+    [0.25, 0.75, 0],
+    [0.75, 0.25, 0],
+    [0, 0.25, 0.75],
+    [0, 0.75, 0.25]
+]
 
-class BboxesVisualize:
+class BboxesVisualize(io.ComfyNode):
 
-    def define_schema(self):
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
         return io.Schema(
-            node_id="VisualizeBBoxes",
+            node_id="BboxesVisualize",
+            display_name="Bounding Boxes Visualize",
             category="BBoxNodes",
-            search_aliases=["Visualize", "bbox", "bounding box"],
-            description="Visualizes the provided bboxes on the image for specified person. Specify 0 for all persons",
+            description = """
+    Visualizes the provided bboxes on the image for specified person(s). Specify 0 for all persons.
+    Not compatible with KJNodes bboxes
+    """,
             inputs=[
-                io.Image.Input("image"),
-                io.BoundingBox.Input("bboxes", force_input=True),
-                io.Int.Input("line_width", default=0, min=0, max=10, step=1,
-                             tooltip="Width of the line"),
-                io.Int.Input("person_index", default=0, min=0, max=5, step=1,
-                             tooltip="Index of the person. 0 is all persons"),
+                io.Image.Input("images",
+                               optional=False,
+                               tooltip="The input images to process"
+                               ),
+                io.BoundingBox.Input("bboxes",
+                                     force_input=True,
+                                     tooltip="Bounding boxes (not compatible with KJNodes)"
+                                     ),
+                io.Int.Input("line_width",
+                                 min=1,
+                                 max=5,
+                                 step=1,
+                                 default=1,
+                                 optional=False,
+                                 tooltip="Rectangle border width"
+                                 ),
+                io.Int.Input("person_index",
+                                 min=0,
+                                 max=10,
+                                 step=1,
+                                 default=0,
+                                 optional=False,
+                                 tooltip="The person index on the image starting from 1. 0 for all persons"
+                                 ),
             ],
             outputs=[
-                io.Image.Output(tooltip="Image with boxes drawn on the image"),
+                io.Image.Output("images",
+                                tooltip="Output images with drawn bounding boxes"),
             ],
         )
 
     @classmethod
-    def execute(cls, image, bboxes, line_width, person_index) -> io.NodeOutput:
+    def execute(cls, images, bboxes, line_width, person_index) -> io.NodeOutput:
 
-        draw_boxes = []
         image_list = []
-        total_frames = image.shape[0]
-        img_h = image.shape[1]
-        img_w = image.shape[2]
+        if images.shape[0] == 0:
+            raise ValueError("Input image batch is empty")
 
         if not isinstance(bboxes, list):
             bboxes = [[bboxes]]
         elif len(bboxes) == 0:
-            return io.NodeOutput(image)
+            return io.NodeOutput(images)
 
-        for frame_idx in range(total_frames):
-            frame_bboxes = bboxes[min(frame_idx, len(bboxes) - 1)]
-            if not frame_bboxes:
-                continue
+        steps = images.shape[0]
+        pbar = ProgressBar(steps)
+        batch_count = 0
 
-            if person_index == 0:
-                for b in frame_bboxes:
-                    x = b["x"]
-                    y = b["y"]
-                    width = b["width"]
-                    height = b["height"]
+        for image, frame_bboxes in zip(images, bboxes):
+
+            draw_boxes = []
+            for index, box in enumerate(frame_bboxes):
+                if person_index == 0 or index == person_index - 1:
+                    x = box["x"]
+                    y = box["y"]
+                    width = box["width"]
+                    height = box["height"]
                     push_bbox(x, y, width, height, draw_boxes)
-            else:
-                index = 0
-                if person_index > 0 and len(frame_bboxes) <= person_index:
-                    index = person_index - 1
 
-                bbox = frame_bboxes[index]
-                x = bbox["x"]
-                y = bbox["y"]
-                width = bbox["width"]
-                height = bbox["height"]
-                push_bbox(x, y, width, height, draw_boxes)
-
-        for bbox in draw_boxes:
-
-            x1 = min(bbox[0], img_w - 1)
-            y1 = min(bbox[1], img_h - 1)
-            x2 = min(img_w, bbox[0] + bbox[2])
-            y2 = min(img_h, bbox[1] + bbox[3])
             # Permute the image dimensions
-            image = image.permute(2, 0, 1)
+            img_with_bbox = image.permute(2, 0, 1)
+            pil_image = transforms.ToPILImage()(img_with_bbox)
+            draw = ImageDraw.Draw(pil_image)
 
-            # Clone the image to draw bounding boxes
-            img_with_bbox = image.clone()
+            # go through selected draw boxes
+            for color_index, bbox in enumerate(draw_boxes):
 
-            # Define the color for the bbox, e.g., red
-            color = torch.tensor([1, 0, 0], dtype=torch.float32)
+                # Define the color for the bbox, e.g., red
+                color = tuple(int(255 * x) for x in colors[color_index])[:3]
 
-            # Ensure color tensor matches the image channels
-            if color.shape[0] != img_with_bbox.shape[0]:
-                color = color.unsqueeze(1).expand(-1, line_width)
+                # Draw the bbox rectangle
+                x, y, width, height = bbox
+                draw.rectangle([x, y, x + width, y + width], outline=color, width=line_width)
 
-            # Draw lines for each side of the bbox with the specified line width
-            for lw in range(line_width):
-                # Top horizontal line
-                if y1 + lw < img_h:
-                    img_with_bbox[:, y1 + lw, x1:x2] = color[:, None]
-
-                # Bottom horizontal line
-                if y2 - lw < img_h:
-                    img_with_bbox[:, y2 - lw, x1:x2] = color[:, None]
-
-                # Left vertical line
-                if x1 + lw < img_w:
-                    img_with_bbox[:, y1:y2, x1 + lw] = color[:, None]
-
-                # Right vertical line
-                if x2 - lw < img_w:
-                    img_with_bbox[:, y1:y2, x2 - lw] = color[:, None]
+            #Drawing frame number in the top left corner of the frame
+            draw_frame_index(batch_count, draw)
 
             # Permute the image dimensions back
-            img_with_bbox = img_with_bbox.permute(1, 2, 0).unsqueeze(0)
+            img_with_bbox = transforms.ToTensor()(pil_image).permute(1, 2, 0)
             image_list.append(img_with_bbox)
+            pbar.update(batch_count)
+            batch_count += 1
 
-        return io.NodeOutput(image_list)
+        return io.NodeOutput(torch.stack(image_list).cpu().float())
+
+class TrackingVisualize(io.ComfyNode):
+
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="TrackingVisualize",
+            display_name="Tracking Data Visualize",
+            category="BBoxNodes",
+            description = """
+    Visualizes the provided tracking info (InstanceDiffusion) on the image for all or specified person.
+    Similar to KJNode 'DrawInstanceDiffusionTracking'. Compatible with InstanceDiffusion nodes
+    """,
+            inputs=[
+                io.Image.Input("images",
+                               optional=False,
+                               tooltip="The input images to process"
+                               ),
+                io.Custom("TRACKING").Input("tracking",
+                                     optional=False,
+                                     tooltip="Tracking data from InstanceDiffusion"
+                                     ),
+                io.Int.Input("line_width",
+                                 min=1,
+                                 max=5,
+                                 step=1,
+                                 default=1,
+                                 optional=False,
+                                 tooltip="Rectangle border width"
+                                 ),
+                io.Int.Input("person_index",
+                                 min=0,
+                                 max=10,
+                                 step=1,
+                                 default=0,
+                                 optional=False,
+                                 tooltip="The person index on the image starting from 1. 0 for all persons"
+                                 ),
+                io.Combo.Input("body_part",
+                               options=["All", "Head", "Neck", "Shoulder", "LArm", "RArm", "LForearm", "RForearm", "Torso"],
+                               default="All",
+                               optional=False,
+                               tooltip="The body part on the image to draw rectangle for")
+            ],
+            outputs=[
+                io.Image.Output("images",
+                                tooltip="Output images with drawn bounding boxes"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, images, tracking, line_width, person_index, body_part) -> io.NodeOutput:
+
+        image_list = []
+
+        steps = images.shape[0]
+        pbar = ProgressBar(steps)
+
+        draw_boxes = {}
+        # Iterate through body parts in the tracking data
+        parse_tracking(tracking, body_part, person_index, False, draw_boxes)
+
+        for frame_index,image in enumerate(images):
+
+            # Permute the image dimensions
+            img_with_bbox = image.permute(2, 0, 1)
+            pil_image = transforms.ToPILImage()(img_with_bbox)
+            draw = ImageDraw.Draw(pil_image)
+
+            if draw_boxes.get(frame_index):
+                bboxes = draw_boxes[frame_index]
+
+                # Draw collected boxes
+                for bbox in bboxes:
+
+                    x1, y1, x2, y2, part = bbox
+                    color_index = body_part_names.index(part)
+
+                    # Define the color for the bbox, e.g., red
+                    color = tuple(int(255 * x) for x in colors[color_index])[:3]
+
+                    # Draw the tracking box rectangle
+                    draw.rectangle([x1, y1, x2, y2], outline=color, width=line_width)
+
+            #Drawing frame number in the top left corner of the frame
+            draw_frame_index(frame_index, draw)
+
+            # Permute the image dimensions back
+            img_with_bbox = transforms.ToTensor()(pil_image).permute(1, 2, 0)
+            image_list.append(img_with_bbox)
+            pbar.update(frame_index)
+
+        return io.NodeOutput(torch.stack(image_list).cpu().float())
