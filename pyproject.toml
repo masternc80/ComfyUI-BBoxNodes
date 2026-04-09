@@ -5,7 +5,7 @@ name = "comfyui-bboxnodes"
 description = "Bboxes (Bounding Boxes) handling and visualization"
 version = "1.0.0"
 license = {file = "LICENSE"}
-dependencies = ["",]  # e.g.) ["numpy==1.18.1", ]
+dependencies = ["pillow>=10.3.0",]  # e.g.) ["numpy==1.18.1", ]
 
 [project.urls]
 Repository = "https://github.com/masternc80/ComfyUI-BBoxNodes"
