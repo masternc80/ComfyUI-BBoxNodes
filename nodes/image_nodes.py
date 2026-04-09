@@ -127,8 +127,8 @@ class TrackingVisualize(io.ComfyNode):
             display_name="Tracking Data Visualize",
             category="BBoxNodes",
             description = """
-    Visualizes the provided tracking info (InstanceDiffusion) on the image for all or specified person.
-    Similar to KJNode 'DrawInstanceDiffusionTracking'. Compatible with InstanceDiffusion nodes
+    Visualizes the provided body tracking data on the image for all or specified person.
+    Similar to KJNode 'DrawInstanceDiffusionTracking'. Compatible with KJ nodes
     """,
             inputs=[
                 io.Image.Input("images",

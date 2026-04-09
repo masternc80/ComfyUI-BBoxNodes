@@ -85,9 +85,8 @@ class TrackingToBBoxScheduler(io.ComfyNode):
             display_name="Convert Tracking To BBoxes",
             category="BBoxNodes",
             description = """
-Converts the provided tracking info (InstanceDiffusion) to BBoxes format. Can use filtering (Body part, person index) 
-and a scheduler (Optional). Person index is 0 for all persons, or a specific person starting from 1
-Compatible with InstanceDiffusion nodes. Not compatible with KJNodes bboxes
+Converts the provided body tracking data to BBoxes format. Can use filtering (Body part, person index) 
+and a scheduler (Optional). Input compatible with KJ nodes.
 """,
             inputs=[
                 io.Custom("TRACKING").Input("tracking",
