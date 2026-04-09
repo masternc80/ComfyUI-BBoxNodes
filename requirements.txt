@@ -3,6 +3,3 @@
 
 
 pillow
-comfy
-torchvision
-torch

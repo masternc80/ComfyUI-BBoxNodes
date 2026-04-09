@@ -1,5 +1,5 @@
 from comfy_api.latest import io
-from utils import parse_tracking, body_part_names, parse_schedule
+from .utils import parse_tracking, body_part_names, parse_schedule
 
 
 class BBoxScheduler(io.ComfyNode):
@@ -54,8 +54,8 @@ Not compatible with KJNodes bboxes
 
         person_filter = 0
         for index, bboxes_frame in enumerate(bboxes):
-            if frames_schedule and frames_schedule.get(str(index)):
-                person_filter = frames_schedule[str(index)]
+            if frames_schedule and frames_schedule.get(index) is not None:
+                person_filter = frames_schedule[index]
 
             if len(bboxes_frame) == 0:
                 continue
@@ -126,33 +126,42 @@ Compatible with InstanceDiffusion nodes. Not compatible with KJNodes bboxes
         frames_schedule = {}
         parse_schedule(frames_schedule, schedule)
 
-        tracking_boxes = []
-        num_frames = 1
+        tracking_boxes = {}
         # Iterate through body parts in the tracking data
         parse_tracking(tracking, body_part, person_index, True, tracking_boxes)
 
         person_filter = 0
         # initialize bboxes
         empty_bbox = {"x": 0, "y": 0, "width": 1, "height": 1}
-        bboxes = [[]] * num_frames
+        bboxes = [[]] * len(tracking_boxes)
+
+        print(f"frames_schedule: {frames_schedule}")
         # go through selected tracking boxes
-        for tracking_box in tracking_boxes:
+        for tracking_index in tracking_boxes:
 
-            index, x1, y1, x2, y2, person = tracking_box
-            # convert to bbox format
-            bbox = {"x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1}
-            if frames_schedule and frames_schedule.get(str(index)):
-                person_filter = frames_schedule[str(index)]
+            bboxes[tracking_index] = []
+            persons_list = tracking_boxes[tracking_index]
+            if frames_schedule and frames_schedule.get(tracking_index) is not None:
+                person_filter = frames_schedule[tracking_index]
 
-            if bbox != empty_bbox:
+            for person in persons_list:
                 if person_filter == 0 or person_filter == person + 1:
-                    if bboxes[index] != [empty_bbox]:
-                        bboxes[index].append(bbox)
-                    else:
-                        bboxes[index] = [bbox]
+                    tracking_boxes_list = tracking_boxes[tracking_index][person]
+
+                    for tracking_box in tracking_boxes_list:
+
+                        x1, y1, x2, y2, person_body_part = tracking_box
+                        # convert to bbox format
+                        bbox = {"x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1}
+
+                        if bbox != empty_bbox:
+                            if bboxes[tracking_index] != [empty_bbox]:
+                                bboxes[tracking_index].append(bbox)
+                            else:
+                                bboxes[tracking_index] = [bbox]
 
             # replace empy bbox with dummy bbox if required
-            if bboxes[index] == [] and insert_dummy_bbox:
-                bboxes[index] = [empty_bbox]
+            if bboxes[tracking_index] == [] and insert_dummy_bbox:
+                bboxes[tracking_index] = [empty_bbox]
 
         return io.NodeOutput(bboxes)

@@ -1,5 +1,5 @@
 import torch
-from utils import push_bbox, parse_tracking, body_part_names, draw_frame_index
+from .utils import push_bbox, parse_tracking, body_part_names, draw_frame_index
 from torchvision import transforms
 from comfy.utils import ProgressBar
 from comfy_api.latest import io
@@ -187,19 +187,24 @@ class TrackingVisualize(io.ComfyNode):
             draw = ImageDraw.Draw(pil_image)
 
             if draw_boxes.get(frame_index):
-                bboxes = draw_boxes[frame_index]
+                # Get the list of persons for given frame
+                persons_list = draw_boxes[frame_index]
 
-                # Draw collected boxes
-                for bbox in bboxes:
+                for person in persons_list:
+                    # Get the boxes for given person
+                    bboxes = draw_boxes[frame_index][person]
 
-                    x1, y1, x2, y2, part = bbox
-                    color_index = body_part_names.index(part)
+                    # Draw collected boxes
+                    for bbox in bboxes:
 
-                    # Define the color for the bbox, e.g., red
-                    color = tuple(int(255 * x) for x in colors[color_index])[:3]
+                        x1, y1, x2, y2, part = bbox
+                        color_index = body_part_names.index(part)
 
-                    # Draw the tracking box rectangle
-                    draw.rectangle([x1, y1, x2, y2], outline=color, width=line_width)
+                        # Define the color for the bbox, e.g., red
+                        color = tuple(int(255 * x) for x in colors[color_index])[:3]
+
+                        # Draw the tracking box rectangle
+                        draw.rectangle([x1, y1, x2, y2], outline=color, width=line_width)
 
             #Drawing frame number in the top left corner of the frame
             draw_frame_index(frame_index, draw)
